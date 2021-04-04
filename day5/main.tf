@@ -16,15 +16,20 @@ resource "aws_instance" "server" {
     }
 
     provisioner "file" {
+        source      = "config"
+        destination = "/tmp"
+    }
+
+    provisioner "file" {
         source = "install_server.sh"
         destination = "/tmp/install_server.sh"
     }
-
+    
     provisioner "remote-exec" {
         inline = [
-          "chmod +x /tmp/*sh",
-          "cd /tmp",
-          "./install_server.sh",
-    ]
+            "chmod +x /tmp/*sh",
+            "cd /tmp",
+            "./install_server.sh ${aws_instance.server.public_ip}"
+        ] 
     }
 }

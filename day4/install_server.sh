@@ -1,44 +1,34 @@
 #!/bin/bash
 
-sudo yum install expect -y
-sudo yum install firewalld -y
-sudo systemctl start firewalld
-sudo systemctl enable firewalld
-sudo setenforce 0 && sudo sed -i 's/^SELINUX=.*/SELINUX=permissive/g' /etc/selinux/config
+DD_AGENT_MAJOR_VERSION=7 DD_API_KEY="""""""""" DD_SITE="datadoghq.eu" bash -c "$(curl -L https://s3.amazonaws.com/dd-agent/scripts/install_script.sh)"
+sudo yum install -y httpd
+sudo systemctl enable httpd
+sudo systemctl start httpd
 
-sudo dnf -y install @httpd
-sudo systemctl enable --now httpd
+sudo cat << EOF >> /etc/httpd/conf/httpd.conf
+<Location /server-status>
+    SetHandler server-status
+    Order Deny,Allow
+    Deny from all
+    Allow from 127.0.0.1
+</Location>
+ExtendedStatus On
+EOF
+sudo systemctl restart httpd
 
-sudo rpm -Uvh https://repo.zabbix.com/zabbix/5.0/rhel/8/x86_64/zabbix-release-5.0-1.el8.noarch.rpm
-sudo dnf clean all
-sudo dnf -y install zabbix-server-mysql zabbix-web-mysql zabbix-apache-conf zabbix-agent
+sudo cat << EOF >> /etc/datadog-agent/conf.d/apache.d/conf.yaml.example
+logs:
+  - type: file
+    path: /var/log/httpd/access_log
+    source: apache
+    sourcecategory: http_web_access
+    service: apache
+  - type: file
+    path: /var/log/httpd/error_log
+    source: apache
+    sourcecategory: http_web_access
+    service: apache
+EOF
 
-sudo dnf -y install mariadb-server && sudo systemctl start mariadb && sudo systemctl enable mariadb
-
-sudo ./inn_db.sh
-
-sudo mysql -uroot -p'lory' -e "create database zabbix character set utf8 collate utf8_bin;"
-sudo mysql -uroot -p'lory' -e "grant all privileges on zabbix.* to zabbix@localhost identified by 'zabbixDBpass';"
-
-sudo mysql -uroot -p'lory' zabbix -e "set global innodb_strict_mode='OFF';"
-
-sudo zcat /usr/share/doc/zabbix-server-mysql*/create.sql.gz | mysql -uzabbix -p'zabbixDBpass' zabbix
-
-sudo mysql -uroot -p'lory' zabbix -e "set global innodb_strict_mode='ON';"
-
-sudo sh -c "echo 'DBPassword=zabbixDBpass'>> /etc/zabbix/zabbix_server.conf"
-
-sudo systemctl restart zabbix-server 
-sudo systemctl enable zabbix-server
-
-sudo firewall-cmd --add-service={http,https} --permanent
-sudo firewall-cmd --add-port={10051/tcp,10050/tcp} --permanent
-sudo firewall-cmd --reload
-
-sudo sh -c "echo 'php_value[date.timezone] = Europe/Moscow' >> /etc/php-fpm.d/zabbix.conf"
-
-sudo systemctl restart httpd php-fpm
-sudo systemctl enable httpd php-fpm
-
-sudo systemctl enable zabbix-agent.service
-sudo systemctl restart zabbix-agent.service
+sudo chmod 655 -R /var/log/httpd
+sudo service datadog-agent restart
